@@ -9,9 +9,22 @@
 
 两者互补：`codex-ppt` 出图，`image-to-editable-ppt` 把图变回可编辑对象。
 
+## 上游项目
+
+本仓库是下面两个开源技能的 **WorkBuddy 移植版**。工作流、状态脚本、风格库、验收标准都来自上游，这里只做运行时适配（具体差异见[与上游的差异](#与上游的差异)）。
+
+| 技能 | 上游仓库 | 作者 | 许可 |
+|---|---|---|---|
+| `codex-ppt` | [ningzimu/codex-ppt-skill](https://github.com/ningzimu/codex-ppt-skill) | [@ningzimu](https://github.com/ningzimu) | MIT |
+| `image-to-editable-ppt` | [ningzimu/image-to-editable-ppt-skill](https://github.com/ningzimu/image-to-editable-ppt-skill) | [@ningzimu](https://github.com/ningzimu) | MIT |
+
+上游两个技能面向 Codex / Claude Code 等本地 agent 编写，假定运行时有内置的 `image_gen` 工具和 subagent 机制。本仓库保留全部原有能力，只把这两处运行时假设换成 WorkBuddy 的 `ImageGen` 工具与 `Agent`（`general-purpose`）派发，另外补了订阅额度后端和额度来源闸门。
+
+上游若更新了工作流，建议先看上游的 diff 再决定是否合入；也欢迎先去给上游点个 star。
+
 ---
 
-## 快速开始
+## 安装
 
 ### 前置条件
 
@@ -22,7 +35,29 @@
   - 本机装有 Codex CLI 并已用 ChatGPT 账号登录（消耗订阅额度，零 API 费用）
   - 任意 OpenAI 兼容的 Images API（key + base URL）
 
-### 安装（macOS / Linux / Git Bash）
+### 方式一：让 WorkBuddy 自己装（最省事）
+
+把这句话直接发给 WorkBuddy：
+
+```text
+帮我安装这个技能：https://github.com/GETdata466/workbuddy-ppt-skills
+```
+
+它会 clone 仓库、把两个技能复制到 `~/.workbuddy/skills/`、装好 Python 依赖，并初始化一份默认配置。
+
+想让它一次做到位，可以说得更具体：
+
+```text
+clone https://github.com/GETdata466/workbuddy-ppt-skills 到本地，
+运行 bash install.sh（Windows 用 powershell -ExecutionPolicy Bypass -File install.ps1），
+装完后用 python skills/codex-ppt/scripts/codex_ppt_runtime.py doctor 报告当前生图配置。
+```
+
+装完必须**新开一个会话**：技能列表在会话启动时加载，当前会话不会凭空多出这两个技能。
+
+### 方式二：命令行
+
+macOS / Linux / Git Bash：
 
 ```bash
 git clone https://github.com/GETdata466/workbuddy-ppt-skills.git
@@ -30,7 +65,7 @@ cd workbuddy-ppt-skills
 bash install.sh
 ```
 
-### 安装（Windows PowerShell）
+Windows PowerShell：
 
 ```powershell
 git clone https://github.com/GETdata466/workbuddy-ppt-skills.git
@@ -38,18 +73,55 @@ cd workbuddy-ppt-skills
 powershell -ExecutionPolicy Bypass -File install.ps1
 ```
 
-安装脚本会做三件事：复制技能到技能目录、安装 Python 依赖、以 editable 模式安装 `editppt` CLI。完成后**重启会话**，技能才会出现在可用列表里。
+脚本做四件事：
 
-### 手动安装
+1. 复制 `codex-ppt` 与 `image-to-editable-ppt` 到 `~/.workbuddy/skills/`
+2. 若 `~/.workbuddy/ppt-skill/.env` 还不存在，从 `.env.example` 生成一份（默认订阅额度路径）；已存在则原样保留，不覆盖 key 和代理设置
+3. 安装 Python 依赖，并以 editable 模式安装 `editppt` CLI
+4. 自检 `import pptx, PIL` 与 `editppt doctor`
+
+只想先看文件、不装依赖：`bash install.sh --no-deps`。
+
+### 方式三：手动复制
 
 ```bash
-cp -r skills/codex-ppt skills/image-to-editable-ppt ~/.workbuddy/skills/
+git clone https://github.com/GETdata466/workbuddy-ppt-skills.git
+cp -r workbuddy-ppt-skills/skills/codex-ppt workbuddy-ppt-skills/skills/image-to-editable-ppt ~/.workbuddy/skills/
 
 python -m pip install -r ~/.workbuddy/skills/codex-ppt/requirements.txt
 python -m pip install --editable ~/.workbuddy/skills/image-to-editable-ppt/cli
 
-editppt doctor    # 自检：依赖、OCR token、生图后端
+mkdir -p ~/.workbuddy/ppt-skill
+cp ~/.workbuddy/skills/codex-ppt/.env.example ~/.workbuddy/ppt-skill/.env
 ```
+
+### 验证安装
+
+```bash
+# 依赖、OCR token、当前生效的额度来源
+editppt doctor
+
+# 只看生图配置（不依赖 editppt）
+python ~/.workbuddy/skills/codex-ppt/scripts/codex_ppt_runtime.py doctor
+```
+
+看到 `active quota source: codex-oauth (local ChatGPT subscription quota)` 就说明默认走订阅额度、可用。再新开一个会话，说「用这个技能做一份 PPT」应当能触发。
+
+### 更新与卸载
+
+```bash
+cd workbuddy-ppt-skills
+git pull
+bash install.sh          # 重装；已有的 .env 不会被覆盖
+```
+
+卸载：
+
+```bash
+rm -rf ~/.workbuddy/skills/codex-ppt ~/.workbuddy/skills/image-to-editable-ppt
+```
+
+配置与自定义风格另存于 `~/.workbuddy/ppt-skill/`，不再需要时手动删除。
 
 ---
 
@@ -86,6 +158,24 @@ python scripts/image_gen.py generate --provider api        --prompt-file p.txt -
 ```
 
 `--provider auto`（不传时的默认值）保留旧行为：跟随 `.env` 并允许回落。它的用途是无人值守重跑，不该用来代替询问。
+
+### 从模板开始
+
+仓库带一份逐行注释的模板 `skills/codex-ppt/.env.example`。安装脚本看到目标目录还没有 `.env`，会自动复制一份到 `~/.workbuddy/ppt-skill/.env` —— 默认就是订阅额度路径，装完即可用。**已有 `.env` 时只提示、绝不覆盖**，所以重复安装不会冲掉你的 key 和代理设置。
+
+手工初始化：
+
+```bash
+mkdir -p ~/.workbuddy/ppt-skill
+cp ~/.workbuddy/skills/codex-ppt/.env.example ~/.workbuddy/ppt-skill/.env
+chmod 600 ~/.workbuddy/ppt-skill/.env
+
+# 想走中转站就填这两行（留空则只用订阅额度）
+# CODEX_PPT_API_BASE_URL=https://your-relay.example.com/v1
+# OPENAI_API_KEY=sk-...
+```
+
+模板里 `CODEX_PPT_FALLBACK_BASE_URL` 默认留空，意思是**任何失败都不会自动产生费用**；填上它，`--provider auto` 才会在订阅额度失败时回落到该端点。
 
 ### 配置文件
 
@@ -191,6 +281,7 @@ workbuddy-ppt-skills/
 └── skills/
     ├── codex-ppt/
     │   ├── SKILL.md
+    │   ├── .env.example     # 配置模板；安装时自动复制到 ~/.workbuddy/ppt-skill/.env
     │   ├── docs/            # 工作流、后端、装配、风格库等规则
     │   ├── prompts/         # 逐页子代理交接模板
     │   ├── references/      # 内置视觉风格

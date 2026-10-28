@@ -191,3 +191,7 @@ On Windows with the bundled runtime, call the runtime interpreter explicitly:
 ```bash
 "C:/Users/<you>/.workbuddy/binaries/python/envs/default/Scripts/python.exe" -m pip install --editable <skill-root>/cli
 ```
+
+## Documentation and Updates
+
+Upstream project: [ningzimu/image-to-editable-ppt-skill](https://github.com/ningzimu/image-to-editable-ppt-skill). This WorkBuddy edition keeps the upstream rebuild workflow and adds the `ImageGen` tool mapping, `general-purpose` page subagents, the `pip install --editable` CLI install, and the `--provider` quota gate; see the repository README for the full diff list.

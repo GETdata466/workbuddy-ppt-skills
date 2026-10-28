@@ -37,12 +37,12 @@ if (-not $Py) {
 }
 if (-not $Py) { Fail "no Python interpreter found; install Python 3.10+ or add it to PATH" }
 
-Say "[1/4] Python: $Py"
+Say "[1/5] Python: $Py"
 & $Py -c "import sys; sys.exit(0 if sys.version_info >= (3,10) else 1)"
 if ($LASTEXITCODE -ne 0) { Fail "Python 3.10+ required" }
 
 # --- copy skills -----------------------------------------------------------------
-Say "[2/4] Installing skills into $Dest"
+Say "[2/5] Installing skills into $Dest"
 New-Item -ItemType Directory -Force -Path $Dest | Out-Null
 foreach ($name in @("codex-ppt", "image-to-editable-ppt")) {
     $from = Join-Path $Src $name
@@ -55,11 +55,28 @@ foreach ($name in @("codex-ppt", "image-to-editable-ppt")) {
     Say "      $name -> $to"
 }
 
+# --- seed runtime config ---------------------------------------------------------
+# Never overwrite an existing .env: it may hold credentials or hand-tuned proxy
+# ports. Only seed when neither the new nor the legacy home has one.
+$RuntimeHome = if ($env:CODEX_PPT_HOME) { $env:CODEX_PPT_HOME } else { Join-Path $env:USERPROFILE ".workbuddy\ppt-skill" }
+$LegacyHome = Join-Path $env:USERPROFILE ".codex-ppt-skill"
+$RuntimeEnv = Join-Path $RuntimeHome ".env"
+if ((Test-Path $RuntimeEnv) -or (Test-Path (Join-Path $LegacyHome ".env"))) {
+    Say "[3/5] Runtime config already exists; left untouched"
+    if (Test-Path $RuntimeEnv) { Say "      $RuntimeEnv" } else { Say "      $(Join-Path $LegacyHome '.env')" }
+} else {
+    New-Item -ItemType Directory -Force -Path $RuntimeHome | Out-Null
+    Copy-Item -Force (Join-Path $Dest "codex-ppt\.env.example") $RuntimeEnv
+    Say "[3/5] Seeded default runtime config (local Codex subscription quota)"
+    Say "      $RuntimeEnv"
+    Say "      to use a relay API instead, fill CODEX_PPT_API_BASE_URL and OPENAI_API_KEY"
+}
+
 # --- python dependencies ---------------------------------------------------------
 if ($SkipDeps) {
-    Say "[3/4] Skipped dependency installation (--no-deps)"
+    Say "[4/5] Skipped dependency installation (--no-deps)"
 } else {
-    Say "[3/4] Installing Python dependencies"
+    Say "[4/5] Installing Python dependencies"
     & $Py -m pip install --quiet --disable-pip-version-check -r (Join-Path $Dest "codex-ppt\requirements.txt")
     if ($LASTEXITCODE -ne 0) { Say "      warning: codex-ppt requirements failed; run pip install -r manually" }
 
@@ -68,7 +85,7 @@ if ($SkipDeps) {
 }
 
 # --- verify ----------------------------------------------------------------------
-Say "[4/4] Verifying"
+Say "[5/5] Verifying"
 & $Py -c "import pptx, PIL; print('      python-pptx + Pillow ok')"
 if ($LASTEXITCODE -ne 0) { Say "      warning: python-pptx/Pillow missing" }
 
@@ -78,7 +95,8 @@ else { Say "      editppt doctor reported issues; run '$Py -m editppt.cli doctor
 
 Say ""
 Say "Done. Restart the WorkBuddy session so the new skills are picked up."
-Say "Next: give both skills an image backend (only one is needed):"
-Say '  - use the WorkBuddy ImageGen tool when the session exposes it, or'
-Say "  - log in with the Codex CLI for subscription-quota generation, or"
-Say '  - write OPENAI_BASE_URL + OPENAI_API_KEY to %CODEX_PPT_HOME%\.env (default: %USERPROFILE%\.workbuddy\ppt-skill\.env)'
+Say "Before generating images the skill now asks which quota to spend:"
+Say "  - local Codex subscription (zero API cost; requires 'codex login')"
+Say "  - relay / OpenAI-compatible API (needs CODEX_PPT_API_BASE_URL + OPENAI_API_KEY)"
+Say "Check the effective source any time:"
+Say "  & '$Py' '$Dest\codex-ppt\scripts\codex_ppt_runtime.py' doctor"
