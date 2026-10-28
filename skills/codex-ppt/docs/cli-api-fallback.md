@@ -27,12 +27,25 @@ This is an internal setup step for the skill. Do not ask the user to run it unle
 
 The fallback CLI loads `~/.workbuddy/ppt-skill/.env` automatically for `OPENAI_API_KEY`, `OPENAI_BASE_URL`, and `CODEX_PPT_IMAGE_MODEL`. Do not manually parse `.env`. For API key, base URL, model, and config troubleshooting, read `image-model-configuration.md` only after the fallback CLI reports missing or invalid configuration, when the user explicitly wants to change those settings, or when a real API call reports authentication, permission, base URL, or model availability failure.
 
+## Quota Source Flag (required)
+
+Every command below must carry the `--provider` flag that matches the answer the user gave before generation started:
+
+- `--provider codex-oauth` — local ChatGPT subscription quota. Paid-API fallback is disabled on purpose, so a failure stops the slide instead of billing a metered endpoint.
+- `--provider api` — the relay / OpenAI-compatible endpoint from `CODEX_PPT_API_BASE_URL` (falls back to `CODEX_PPT_FALLBACK_BASE_URL`) with `OPENAI_API_KEY`.
+- Omit only for unattended reruns of a deck whose source is already recorded; the CLI then follows `OPENAI_BASE_URL` (`--provider auto`).
+
+The CLI echoes the resolved source on stderr, for example
+`Quota source: --provider codex-oauth -> codex-oauth (local ChatGPT subscription quota; paid-API fallback disabled by explicit choice)`.
+Copy that line into the slide result; do not guess the provenance.
+
 ## Generate One Slide
 
 Basic generation command:
 
 ```bash
 {runtime_python} {skill_root}/scripts/image_gen.py generate \
+  --provider {codex-oauth|api} \
   --model gpt-image-2.5-flare \
   --prompt-file {prompt_file} \
   --size 2560x1440 \
@@ -47,6 +60,7 @@ When generating from saved `prompts/slide_XX.json` files, use the job's `prompt`
 ```bash
 python -c 'import json, pathlib; print(json.loads(pathlib.Path("{base_dir}/{deck_name}/prompts/slide_01.json").read_text())["prompt"])' | \
 {runtime_python} {skill_root}/scripts/image_gen.py generate \
+  --provider {codex-oauth|api} \
   --prompt-file - \
   --size 2560x1440 \
   --quality medium \
@@ -70,6 +84,7 @@ If a slide is mostly correct but has a localized issue, use the selected backend
 
 ```bash
 {runtime_python} {skill_root}/scripts/image_gen.py edit \
+  --provider {codex-oauth|api} \
   --image {slide_path} \
   --prompt {edit_prompt} \
   --out {new_slide_path}

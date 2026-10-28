@@ -12,7 +12,7 @@ description_en: |
 
 本技能从 [ningzimu/image-to-editable-ppt-skill](https://github.com/ningzimu/image-to-editable-ppt-skill) 迁移而来，面向 WorkBuddy 运行时。三处差异：
 
-1. **图片后端**。原版的内置工具 `image_gen.imagegen` 在 WorkBuddy 中对应 ImageGen 工具；`--image-backend builtin-imagegen` 的取值保持不变，但契约里的 `tool_name` 已改为 `ImageGen`。ImageGen 不可调用时，`editppt image generate/edit` 默认走本机 Codex CLI 的订阅额度，再回落到已配置的 OpenAI 兼容 API。
+1. **图片后端**。原版的内置工具 `image_gen.imagegen` 在 WorkBuddy 中对应 ImageGen 工具；`--image-backend builtin-imagegen` 的取值保持不变，但契约里的 `tool_name` 已改为 `ImageGen`。ImageGen 不可调用时，`editppt image generate/edit` 默认走本机 Codex CLI 的订阅额度，再回落到已配置的 OpenAI 兼容 API。**调用任何生图命令之前先问用户用哪条额度**（中转站 API 还是 Codex 本地额度），并把答案作为 `--provider api|codex-oauth` 透传给 CLI；选本地额度时 CLI 不会回落付费 API。规则同 `codex-ppt/docs/backend-selection.md`。
 2. **页面子代理**。原版依赖多代理工具派发页面重建任务；WorkBuddy 中用 Agent 工具（`general-purpose`）派发，单页运行仍走 `--local` 由主代理重建。
 3. **CLI 安装**。`editppt` 用 `pip install --editable <skill-root>/cli` 安装（原版用 pipx），路径要求见 `references/cli-helper.md` 的 Pre-Run Check。
 

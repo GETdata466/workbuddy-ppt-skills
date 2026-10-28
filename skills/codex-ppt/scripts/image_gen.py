@@ -52,6 +52,14 @@ MAX_BATCH_JOBS = 500
 DEFAULT_RUNTIME_HOME = "~/.workbuddy/ppt-skill"
 LEGACY_RUNTIME_HOME = "~/.codex-ppt-skill"
 
+# Quota source. The agent asks the user before the first image; the answer is
+# passed down as --provider so every later call spends the same budget.
+PROVIDER_AUTO = "auto"
+PROVIDER_CODEX_OAUTH = "codex-oauth"
+PROVIDER_API = "api"
+PROVIDER_CHOICES = (PROVIDER_AUTO, PROVIDER_CODEX_OAUTH, PROVIDER_API)
+CODEX_OAUTH_BASE_URL = "codex-oauth://local"
+
 
 def _resolve_runtime_home() -> Path:
     """Prefer the WorkBuddy home, but keep using a populated legacy home.
@@ -69,7 +77,14 @@ def _resolve_runtime_home() -> Path:
         return legacy_home
     return new_home
 
-ENV_FIELDS = ("OPENAI_API_KEY", "OPENAI_BASE_URL", "CODEX_PPT_IMAGE_MODEL")
+ENV_FIELDS = (
+    "OPENAI_API_KEY",
+    "OPENAI_BASE_URL",
+    "CODEX_PPT_IMAGE_MODEL",
+    "CODEX_PPT_DEFAULT_PROVIDER",
+    "CODEX_PPT_API_BASE_URL",
+    "CODEX_PPT_FALLBACK_BASE_URL",
+)
 
 
 def _die(message: str, code: int = 1) -> None:
@@ -129,6 +144,64 @@ def _api_target_label() -> str:
 
 def _is_codex_oauth_mode() -> bool:
     return is_codex_oauth_base_url(_api_base_url())
+
+
+def _provider_default() -> str:
+    value = (os.getenv("CODEX_PPT_DEFAULT_PROVIDER") or PROVIDER_AUTO).strip().lower()
+    return value if value in PROVIDER_CHOICES else PROVIDER_AUTO
+
+
+def _api_base_candidate() -> Optional[str]:
+    """Endpoint to use when the user deliberately picks the paid/relay API."""
+    for key in ("CODEX_PPT_API_BASE_URL", "CODEX_PPT_FALLBACK_BASE_URL"):
+        value = (os.getenv(key) or "").strip()
+        if value and not is_codex_oauth_base_url(value):
+            return value
+    base = _api_base_url()
+    if base and not is_codex_oauth_base_url(base):
+        return base
+    return None
+
+
+def _allow_fallback(choice: str) -> bool:
+    """Only an implicit choice keeps the paid-API safety net.
+
+    When the user explicitly answers "use the local subscription quota", a
+    silent switch to a metered API would spend money they did not agree to.
+    """
+    return (choice or PROVIDER_AUTO).strip().lower() != PROVIDER_CODEX_OAUTH
+
+
+def resolve_provider_choice(choice: str) -> str:
+    """Rewrite OPENAI_BASE_URL according to the user's quota-source answer."""
+    choice = (choice or PROVIDER_AUTO).strip().lower()
+    if choice not in PROVIDER_CHOICES:
+        _die(f"--provider must be one of {', '.join(PROVIDER_CHOICES)}.")
+    if choice == PROVIDER_CODEX_OAUTH:
+        os.environ["OPENAI_BASE_URL"] = CODEX_OAUTH_BASE_URL
+        return PROVIDER_CODEX_OAUTH
+    if choice == PROVIDER_API:
+        base = _api_base_candidate()
+        if not base:
+            _die(
+                "--provider api needs an OpenAI-compatible endpoint.\n"
+                "Set CODEX_PPT_API_BASE_URL in the runtime .env, or run with "
+                "--provider codex-oauth to spend the local subscription quota instead."
+            )
+        os.environ["OPENAI_BASE_URL"] = base
+        return PROVIDER_API
+    return PROVIDER_CODEX_OAUTH if _is_codex_oauth_mode() else PROVIDER_API
+
+
+def _provider_summary(provider: str, choice: str) -> str:
+    if provider == PROVIDER_CODEX_OAUTH:
+        fallback = (
+            "paid-API fallback enabled"
+            if _allow_fallback(choice)
+            else "paid-API fallback disabled by explicit choice"
+        )
+        return f"codex-oauth (local ChatGPT subscription quota; {fallback})"
+    return f"api ({_api_target_label()})"
 
 
 def _is_atlascloud_base_url(base_url: str) -> bool:
@@ -700,7 +773,11 @@ async def _run_generate_batch(args: argparse.Namespace) -> int:
             )
         return 0
 
-    provider = create_image_provider(api_key=os.getenv("OPENAI_API_KEY"), base_url=_api_base_url())
+    provider = create_image_provider(
+        api_key=os.getenv("OPENAI_API_KEY"),
+        base_url=_api_base_url(),
+        allow_fallback=getattr(args, "allow_fallback", True),
+    )
     sem = asyncio.Semaphore(args.concurrency)
 
     any_failed = False
@@ -822,7 +899,11 @@ def _generate(args: argparse.Namespace) -> None:
         file=sys.stderr,
     )
     started = time.time()
-    provider = create_image_provider(api_key=os.getenv("OPENAI_API_KEY"), base_url=_api_base_url())
+    provider = create_image_provider(
+        api_key=os.getenv("OPENAI_API_KEY"),
+        base_url=_api_base_url(),
+        allow_fallback=getattr(args, "allow_fallback", True),
+    )
     images = provider.generate(payload)
     elapsed = time.time() - started
     print(f"Generation completed in {elapsed:.1f}s.", file=sys.stderr)
@@ -897,7 +978,11 @@ def _edit(args: argparse.Namespace) -> None:
         file=sys.stderr,
     )
     started = time.time()
-    provider = create_image_provider(api_key=os.getenv("OPENAI_API_KEY"), base_url=_api_base_url())
+    provider = create_image_provider(
+        api_key=os.getenv("OPENAI_API_KEY"),
+        base_url=_api_base_url(),
+        allow_fallback=getattr(args, "allow_fallback", True),
+    )
     images = provider.edit(payload, image_paths, mask_path)
 
     elapsed = time.time() - started
@@ -914,6 +999,17 @@ def _edit(args: argparse.Namespace) -> None:
 
 def _add_shared_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--model", default=_default_model())
+    parser.add_argument(
+        "--provider",
+        choices=PROVIDER_CHOICES,
+        default=_provider_default(),
+        help=(
+            "Quota source decided with the user before generating: "
+            "'codex-oauth' spends the local ChatGPT subscription quota (paid-API "
+            "fallback disabled), 'api' spends the configured relay/OpenAI-compatible "
+            "key, 'auto' keeps the .env default and its fallback."
+        ),
+    )
     parser.add_argument("--prompt")
     parser.add_argument("--prompt-file")
     parser.add_argument("--n", type=int, default=1)
@@ -979,6 +1075,13 @@ def main() -> int:
     edit_parser.set_defaults(func=_edit)
 
     args = parser.parse_args()
+    args.provider_resolved = resolve_provider_choice(args.provider)
+    args.allow_fallback = _allow_fallback(args.provider)
+    print(
+        f"Quota source: --provider {args.provider} -> "
+        f"{_provider_summary(args.provider_resolved, args.provider)}",
+        file=sys.stderr,
+    )
     if args.n < 1 or args.n > 10:
         _die("--n must be between 1 and 10")
     if getattr(args, "concurrency", 1) < 1 or getattr(args, "concurrency", 1) > 25:

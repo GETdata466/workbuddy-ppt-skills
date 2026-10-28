@@ -9,6 +9,8 @@ Deck dir: <absolute deck dir>
 Slide job file: <absolute deck dir>/prompts/slide_<NN>.json
 Output target owned by parent: <absolute deck dir>/origin_image/slide_<NN>.png
 Selected image backend: <ImageGen tool OR CLI/API fallback>
+Quota source confirmed with the user: <codex-oauth | api | imagegen>
+Provider flag for every CLI call: <--provider codex-oauth | --provider api | none, when the backend is ImageGen>
 Sample generation method copied from the approved sample:
 - backend_used: <exact backend label recorded by parent>
 - tool_name: <image_gen OR image_generate OR scripts/image_gen.py>
@@ -25,7 +27,7 @@ Input images already prepared by the parent:
 Read the JSON job file, then follow its `prompt` field exactly. Use the selected image backend and the recorded sample generation method only.
 You must produce the final slide candidate by calling the selected image generation backend:
 - ImageGen mode: use the ImageGen tool.
-- CLI/API fallback mode: use `scripts/image_gen.py` with the saved job prompt and required image inputs.
+- CLI/API fallback mode: use `scripts/image_gen.py` with the saved job prompt, the required image inputs, and the exact provider flag given above. Never change the provider flag, never add a fallback of your own.
 
 Forbidden for final slide image creation:
 - local drawing or rendering scripts
@@ -46,6 +48,7 @@ Before returning, visually check:
 
 Return only:
 backend_used=<ImageGen tool OR scripts/image_gen.py>
+quota_source=<codex-oauth | api | imagegen>
 selected_source=/absolute/path/to/$CODEX_HOME/generated_images/.../ig_*.png
 qa_note=<one sentence>
 ```

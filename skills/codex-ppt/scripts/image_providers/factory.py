@@ -12,9 +12,14 @@ from .codex_oauth import (
 from .openai_compatible import OpenAICompatibleImageProvider
 
 
-def create_image_provider(*, api_key: Optional[str], base_url: Optional[str]) -> ImageProvider:
+def create_image_provider(
+    *,
+    api_key: Optional[str],
+    base_url: Optional[str],
+    allow_fallback: bool = True,
+) -> ImageProvider:
     if is_codex_oauth_base_url(base_url):
-        return create_codex_oauth_provider_from_env()
+        return create_codex_oauth_provider_from_env(allow_fallback=allow_fallback)
     if _is_atlascloud_base_url(base_url):
         return AtlasCloudImageProvider(api_key=api_key, base_url=base_url)
     return OpenAICompatibleImageProvider(api_key=api_key, base_url=base_url)

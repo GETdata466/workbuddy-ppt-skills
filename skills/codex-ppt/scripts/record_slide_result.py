@@ -121,6 +121,19 @@ def _matched_expected_backend(backend_used: str, expected_labels: list[str]) -> 
     )
 
 
+def _deck_spec_quota_source(deck_dir: Path) -> str:
+    """Quota source the deck committed to, if deck_spec.json records one."""
+    path = Path(deck_dir) / "deck_spec.json"
+    if not path.exists():
+        return ""
+    try:
+        spec = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return ""
+    value = spec.get("quota_source") if isinstance(spec, dict) else None
+    return value.strip().lower() if isinstance(value, str) else ""
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("deck", help="Deck directory or slide_jobs.json")
@@ -128,6 +141,11 @@ def main() -> int:
     parser.add_argument("--agent-id", required=True)
     parser.add_argument("--backend-used", required=True)
     parser.add_argument("--selected-source", required=True, help="Generated image selected by the worker.")
+    parser.add_argument(
+        "--quota-source",
+        choices=("codex-oauth", "api", "imagegen"),
+        help="Quota the slide was generated on; must match deck_spec.json quota_source.",
+    )
     parser.add_argument("--qa-note", required=True)
     args = parser.parse_args()
 
@@ -143,6 +161,13 @@ def main() -> int:
             )
 
         backend_used = _validate_backend(args.backend_used)
+        declared_quota = _deck_spec_quota_source(deck_dir)
+        if args.quota_source and declared_quota and declared_quota != args.quota_source:
+            raise SystemExit(
+                f"Quota source mismatch for {slide['slide_id']}: worker used "
+                f"`{args.quota_source}`, deck_spec.json declares `{declared_quota}`. "
+                "Regenerate the slide on the confirmed source or fix the deck record."
+            )
         prompt_job = _load_prompt_job(deck_dir, slide)
         expected_backend_labels = _expected_backend_labels(jobs, slide, prompt_job)
         matched_expected_backend = _matched_expected_backend(backend_used, expected_backend_labels)
@@ -160,6 +185,7 @@ def main() -> int:
         slide["result"] = {
             "agent_id": args.agent_id,
             "backend_used": backend_used,
+            "quota_source": args.quota_source,
             "selected_source": str(source),
             "selected_source_sha256": sha256_file(source),
             "final_image": rel_to_deck(deck_dir, target),

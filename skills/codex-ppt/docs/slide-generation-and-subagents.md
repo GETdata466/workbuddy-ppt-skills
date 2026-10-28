@@ -16,6 +16,8 @@ Do not create these final downstream artifacts before outline approval. If the u
 
 `deck_spec.json` must include `sample_generation_method` copied from the approved sample before `prepare_slide_prompts.py` is run. The helper copies that method into each `prompts/slide_XX.json` and into `slide_jobs.json`, so workers can see the exact backend, tool, mode, image context preparation, and output constraints used for the approved sample.
 
+`deck_spec.json` must also record the quota source the user confirmed before generation started: `quota_source` (`codex-oauth` / `api` / `imagegen`) and `provider_flag` (`--provider codex-oauth`, `--provider api`, or `null` for ImageGen). Pass the same flag to every worker, and pass the same value to `record_slide_result.py --quota-source`; the script rejects a slide whose reported source contradicts the deck record.
+
 Before full production, create structured per-slide image jobs. Prefer the bundled deterministic helper:
 
 ```bash
@@ -181,6 +183,7 @@ Result recording:
   --slide slide_02 \
   --agent-id <agent id> \
   --backend-used "ImageGen tool" \
+  --quota-source imagegen \
   --selected-source /absolute/path/to/generated/slide_02.png \
   --qa-note "Text readable; style matches the approved sample."
 ```

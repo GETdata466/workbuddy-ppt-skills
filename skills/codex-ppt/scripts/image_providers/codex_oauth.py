@@ -525,12 +525,19 @@ class CodexOAuthImageProvider(ImageProvider):
         return base64.b64decode(images[0])
 
 
-def create_codex_oauth_provider_from_env() -> CodexOAuthImageProvider:
+def create_codex_oauth_provider_from_env(*, allow_fallback: bool = True) -> CodexOAuthImageProvider:
+    """Build the provider from the shared runtime .env.
+
+    ``allow_fallback=False`` disables the paid-API safety net. Call it when the
+    user deliberately picked the subscription quota: silently spending API credit
+    after they asked for "no charges" is worse than a clean failure.
+    """
     env = _runtime_env()
+    fallback_base = os.getenv("CODEX_PPT_FALLBACK_BASE_URL") or env.get("CODEX_PPT_FALLBACK_BASE_URL")
     return CodexOAuthImageProvider(
         proxy=os.getenv("CODEX_PROXY") or env.get("CODEX_PPT_PROXY"),
         timeout=float(env.get("CODEX_PPT_TIMEOUT") or DEFAULT_TIMEOUT),
         max_parallel=int(env.get("CODEX_PPT_MAX_PARALLEL") or 3),
-        fallback_api_key=os.getenv("OPENAI_API_KEY"),
-        fallback_base_url=env.get("CODEX_PPT_FALLBACK_BASE_URL"),
+        fallback_api_key=os.getenv("OPENAI_API_KEY") if allow_fallback else None,
+        fallback_base_url=fallback_base if allow_fallback else None,
     )
