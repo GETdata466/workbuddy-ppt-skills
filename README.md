@@ -25,7 +25,7 @@
 ### 安装（macOS / Linux / Git Bash）
 
 ```bash
-git clone <this-repo> workbuddy-ppt-skills
+git clone https://github.com/GETdata466/workbuddy-ppt-skills.git
 cd workbuddy-ppt-skills
 bash install.sh
 ```
@@ -33,7 +33,7 @@ bash install.sh
 ### 安装（Windows PowerShell）
 
 ```powershell
-git clone <this-repo> workbuddy-ppt-skills
+git clone https://github.com/GETdata466/workbuddy-ppt-skills.git
 cd workbuddy-ppt-skills
 powershell -ExecutionPolicy Bypass -File install.ps1
 ```
